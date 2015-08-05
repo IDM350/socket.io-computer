@@ -55,6 +55,19 @@ function load() {
   }
 }
 
+// stuff to announce turns
+var allot = new turn.TurnRoster();
+allot.on('turn-lease', function(id) {
+  redis.publish('computer:turn-given', id);
+  setTimeout(allot.checkQueue, turn.TURN_TIMEOUT*1080);
+});
+allot.on('turn-expired', function(id) {
+  redis.publish('computer:turn-lost', id);
+});
+allot.on('turn-receipt', function(id, time) {
+  redis.publish('computer:turn-queued', id + ':' + time);
+});
+
 // controlling
 sub.subscribe('computer:keydown');
 sub.subscribe('computer:pointer');
@@ -75,8 +88,8 @@ sub.on('message', function(channel, data) {
     emu.pointer(x, y, state);
   } else if ('computer:turn' == channel) {
     // turn request (data is socket.id)
-    turn.push(data);
-    turn.checkQueue(true);
+    allot.push(data);
+    allot.checkQueue();
   }
 });
 

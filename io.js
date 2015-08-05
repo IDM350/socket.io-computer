@@ -15,6 +15,9 @@ io.adapter(require('socket.io-redis')(uri, {key: 'xpemu'}));
 // redis queries instance
 var redis = require('./redis').io();
 
+// some per-connection functions are in a separate module
+var delegatedListeners = require('./delegated');
+
 var uid = process.env.COMPUTER_IO_SERVER_UID || port;
 debug('server uid %s', uid);
 
@@ -22,9 +25,33 @@ io.total = 0;
 io.on('connection', function(socket) {
   var req = socket.request;
 
+  delegatedListeners[socket.id] = function(ident, data) {
+    if (ident == 'turn-given') {
+      socket.emit('your-turn');
+
+      // send keypress to emulator
+      socket.on('keydown', function(key) {
+        redis.publish('computer:keydown', key);
+      });
+
+      // pointer events
+      socket.on('pointer', function(x, y, state) {
+        redis.publish('computer:pointer', x + ':' + y + ':' + state);
+      });
+    } else if (ident == 'computer:turn-lost') {
+      socket.removeAllListeners('pointer');
+      socket.removeAllListeners('keydown');
+      socket.emit('lose-turn');
+    } else if (ident == 'computer:turn-queued') {
+      // data is a waiting time in milliseconds
+      socket.emit('turn-ack', data);
+    }
+  }
+
   // keep track of connected clients
   updateClientCount(++io.total);
   socket.on('disconnect', function() {
+    delete delegatedListeners[socket.id];
     updateClientCount(--io.total);
   });
 
@@ -37,16 +64,6 @@ io.on('connection', function(socket) {
       y: 0,
       image: image
     });
-  });
-
-  // send keypress to emulator
-  socket.on('keydown', function(key) {
-    redis.publish('computer:keydown', key);
-  });
-
-  // pointer events
-  socket.on('pointer', function(x, y, state) {
-    redis.publish('computer:pointer', x + ':' + y + ':' + state);
   });
 
   socket.on('turn-request', function(time) {

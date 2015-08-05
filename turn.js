@@ -2,6 +2,9 @@ var Emitter = require('events').EventEmitter;
 
 var TURN_TIMEOUT = 15;
 
+module.exports.TurnRoster = TurnRoster;
+module.exports.TURN_TIMEOUT = TURN_TIMEOUT;
+
 function TurnRoster() {
   if (!this instanceof TurnRoster) return new TurnRoster();
   this.listings = {};
@@ -71,22 +74,3 @@ TurnRoster.prototype.checkQueue = function() {
     if (prevScheduleIndex.indexOf(id) < 0) this.emit('turn-receipt', id, (+(new Date()) - this.lastLeaseTime) + (pos*TURN_TIMEOUT));
   });
 }
-
-var redis = require('./redis').emu();
-var io = require('socket.io-emitter')(redis, {key: 'xpemu'});
-var socketCollection = {};
-
-module.exports = transitoryInstance = new TurnRoster();
-transitoryInstance.on('turn-lease', function(sockid) {
-  if (!socketCollection[sockid]) socketCollection[sockid] = io.in(sockid);
-  socketCollection[sockid].emit('your-turn');
-  setTimeout(transitoryInstance.checkQueue, TURN_TIMEOUT*1080);
-})
-transitoryInstance.on('turn-expired', function(sockid) {
-  socketCollection[sockid].emit('lose-turn');
-  delete socketCollection[sockid];
-});
-transitoryInstance.on('turn-receipt', function(sockid, time) {
-  socketCollection[sockid] = io.in(sockid);
-  socketCollection[sockid].emit('turn-ack', time*1000);
-});
